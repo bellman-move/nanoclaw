@@ -1,0 +1,43 @@
+{
+  "name": "orbi-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for orbi.kr - Korea's largest entrance exam community",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "orbi-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "orbi",
+    "korea",
+    "education",
+    "entrance-exam",
+    "model-context-protocol"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

@@ -8,8 +8,10 @@ import { logger } from './logger.js';
  * do with the values. This keeps secrets out of the process environment
  * so they don't leak to child processes.
  */
-export function readEnvFile(keys: string[]): Record<string, string> {
-  const envFile = path.join(process.cwd(), '.env');
+export function readEnvFile(
+  keys: string[],
+  envFile = path.join(process.cwd(), '.env'),
+): Record<string, string> {
   let content: string;
   try {
     content = fs.readFileSync(envFile, 'utf-8');
@@ -37,6 +39,31 @@ export function readEnvFile(keys: string[]): Record<string, string> {
       value = value.slice(1, -1);
     }
     if (value) result[key] = value;
+  }
+
+  return result;
+}
+
+/**
+ * Resolve env values across multiple candidate files in priority order.
+ * Earlier files win for overlapping keys; later files only fill gaps.
+ */
+export function readEnvFiles(
+  keys: string[],
+  envFiles: string[],
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  const remaining = new Set(keys);
+
+  for (const envFile of envFiles) {
+    if (remaining.size === 0) break;
+    if (!fs.existsSync(envFile)) continue;
+
+    const values = readEnvFile([...remaining], envFile);
+    for (const [key, value] of Object.entries(values)) {
+      result[key] = value;
+      remaining.delete(key);
+    }
   }
 
   return result;

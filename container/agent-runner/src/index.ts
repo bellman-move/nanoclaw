@@ -59,6 +59,7 @@ interface SDKUserMessage {
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
+const ORBI_MCP_SERVER_PATH = '/app/vendor/orbi-viewer-mcp/dist/index.js';
 
 /**
  * Push-based async iterable for streaming user messages to the SDK.
@@ -390,6 +391,9 @@ async function runQuery(
   if (extraDirs.length > 0) {
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
+  if (!fs.existsSync(ORBI_MCP_SERVER_PATH)) {
+    log(`Orbi MCP server not found at ${ORBI_MCP_SERVER_PATH}; continuing without it`);
+  }
 
   for await (const message of query({
     prompt: stream,
@@ -409,7 +413,8 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        'mcp__orbi__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -425,6 +430,14 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        ...(fs.existsSync(ORBI_MCP_SERVER_PATH)
+          ? {
+              orbi: {
+                command: 'node',
+                args: [ORBI_MCP_SERVER_PATH],
+              },
+            }
+          : {}),
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],

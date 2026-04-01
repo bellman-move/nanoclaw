@@ -38,14 +38,18 @@ WORKDIR /app
 
 # Copy package files first for better caching
 COPY agent-runner/package*.json ./
+COPY vendor/orbi-viewer-mcp/package*.json /app/vendor/orbi-viewer-mcp/
 
 # Install dependencies
 RUN npm install
+RUN npm --prefix /app/vendor/orbi-viewer-mcp install
 
 # Copy source code
 COPY agent-runner/ ./
+COPY vendor/orbi-viewer-mcp/ /app/vendor/orbi-viewer-mcp/
 
 # Build TypeScript
+RUN npm --prefix /app/vendor/orbi-viewer-mcp run build
 RUN npm run build
 
 # Create workspace directories
