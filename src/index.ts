@@ -33,6 +33,7 @@ import {
   getAllChats,
   getAllRegisteredGroups,
   getAllSessions,
+  getRecentConversation,
   deleteSession,
   getAllTasks,
   getLastBotMessageTimestamp,
@@ -49,6 +50,7 @@ import {
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
+import { runLocalAgent, shouldUseLocalAgentFallback } from './local-agent.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import {
   restoreRemoteControl,
@@ -78,6 +80,16 @@ const channels: Channel[] = [];
 const queue = new GroupQueue();
 
 const onecli = new OneCLI({ url: ONECLI_URL });
+
+function hasExplicitTriggerMention(
+  messages: NewMessage[],
+  trigger?: string,
+): boolean {
+  const triggerPattern = getTriggerPattern(trigger);
+  return messages.some((message) =>
+    triggerPattern.test(message.content.trim()),
+  );
+}
 
 function ensureOneCLIAgent(jid: string, group: RegisteredGroup): void {
   if (group.isMain) return;
@@ -250,7 +262,16 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!hasTrigger) return true;
   }
 
-  const prompt = formatMessages(missedMessages, TIMEZONE);
+  const promptMessages = shouldUseLocalAgentFallback()
+    ? getRecentConversation(chatJid, 20)
+    : missedMessages;
+  const prompt = formatMessages(promptMessages, TIMEZONE);
+  const promptWithStyle = hasExplicitTriggerMention(
+    missedMessages,
+    group.trigger,
+  )
+    ? `${prompt}\n<instruction>The user explicitly tagged you in Slack. Reply warmly, start your response with 1-2 fitting emojis, and keep a lightly emoji-forward tone throughout.</instruction>`
+    : prompt;
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
   // these messages. Save the old cursor so we can roll back on error.
@@ -282,32 +303,37 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let hadError = false;
   let outputSentToUser = false;
 
-  const output = await runAgent(group, prompt, chatJid, async (result) => {
-    // Streaming output callback — called for each agent result
-    if (result.result) {
-      const raw =
-        typeof result.result === 'string'
-          ? result.result
-          : JSON.stringify(result.result);
-      // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-      const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
-      logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
-      if (text) {
-        await channel.sendMessage(chatJid, text);
-        outputSentToUser = true;
+  const output = await runAgent(
+    group,
+    promptWithStyle,
+    chatJid,
+    async (result) => {
+      // Streaming output callback — called for each agent result
+      if (result.result) {
+        const raw =
+          typeof result.result === 'string'
+            ? result.result
+            : JSON.stringify(result.result);
+        // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
+        const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+        logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
+        if (text) {
+          await channel.sendMessage(chatJid, text);
+          outputSentToUser = true;
+        }
+        // Only reset idle timer on actual results, not session-update markers (result: null)
+        resetIdleTimer();
       }
-      // Only reset idle timer on actual results, not session-update markers (result: null)
-      resetIdleTimer();
-    }
 
-    if (result.status === 'success') {
-      queue.notifyIdle(chatJid);
-    }
+      if (result.status === 'success') {
+        queue.notifyIdle(chatJid);
+      }
 
-    if (result.status === 'error') {
-      hadError = true;
-    }
-  });
+      if (result.status === 'error') {
+        hadError = true;
+      }
+    },
+  );
 
   await channel.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
@@ -341,6 +367,14 @@ async function runAgent(
   chatJid: string,
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<'success' | 'error'> {
+  if (shouldUseLocalAgentFallback()) {
+    const output = await runLocalAgent(prompt);
+    if (onOutput) {
+      await onOutput(output);
+    }
+    return output.status === 'success' ? 'success' : 'error';
+  }
+
   const isMain = group.isMain === true;
   const sessionId = sessions[group.folder];
 
