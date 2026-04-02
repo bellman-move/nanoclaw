@@ -124,7 +124,7 @@ Skills we'd like to see:
 ## Requirements
 
 - macOS, Linux, or Windows (via WSL2)
-- Node.js 20+
+- Node.js 22.x for local development (`.nvmrc` is pinned to `22`; other majors can break native modules such as `better-sqlite3`)
 - [Claude Code](https://claude.ai/download)
 - [Apple Container](https://github.com/apple/container) (macOS) or [Docker](https://docker.com/products/docker-desktop) (macOS/Linux)
 
